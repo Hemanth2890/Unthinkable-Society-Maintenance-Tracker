@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RESIDENT
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          Role     @default(RESIDENT)
+  flatNumber    String?
+  createdAt     DateTime @default(now())
+
+  complaints        Complaint[]        @relation("ComplaintOwner")
+  historyEntries    ComplaintHistory[] @relation("HistoryActor")
+  notices           Notice[]           @relation("NoticeAuthor")
+
+  @@map("users")
+}
+
+model Complaint {
+  id           String          @id @default(cuid())
+  category     String
+  description  String
+  photoUrl     String?
+  status       ComplaintStatus @default(OPEN)
+  priority     Priority        @default(LOW)
+  isClosed     Boolean         @default(false)
+
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  resolvedAt   DateTime?
+
+  residentId   String
+  resident     User            @relation("ComplaintOwner", fields: [residentId], references: [id])
+
+  history      ComplaintHistory[]
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("complaints")
+}
+
+// Immutable audit log — one row per lifecycle event (status OR priority change).
+// Never updated in place; only ever inserted, always inside the same
+// transaction as the Complaint mutation that produced it.
+model ComplaintHistory {
+  id           String          @id @default(cuid())
+  complaintId  String
+  complaint    Complaint       @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  status       ComplaintStatus // status AT this point in history
+  priority     Priority        // priority AT this point in history
+  note         String?
+
+  actorId      String
+  actor        User            @relation("HistoryActor", fields: [actorId], references: [id])
+
+  createdAt    DateTime        @default(now())
+
+  @@index([complaintId])
+  @@map("complaint_history")
+}
+
+model Notice {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  isImportant Boolean  @default(false)
+
+  authorId    String
+  author      User     @relation("NoticeAuthor", fields: [authorId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@index([isImportant, createdAt])
+  @@map("notices")
+}
